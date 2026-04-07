@@ -1,0 +1,44 @@
+# ======================
+# Node.js
+# ======================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ======================
+# Environment variables
+# ======================
+.env
+
+# ======================
+# Runtime / temp files
+# ======================
+logs/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ======================
+# OS / Editor junk
+# ======================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ======================
+# Optional future outputs
+# ======================
+dist/
+build/
+.cache/
+
+# ======================
+# Coverage
+# ======================
+coverage/
+
+// uploads
+uploads/
