@@ -6,18 +6,38 @@ const crypto = require("crypto");
 const fs = require("fs");
 const FormData = require("form-data");
 const axios = require("axios");
-const multer = require("multer")
-
-// Multer config
+const multer = require("multer");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
+
 const upload = multer({ dest: "uploads/" });
+
 const uploadToIPFS = async (filePath) => {
   const data = new FormData();
   data.append("file", fs.createReadStream(filePath));
+
+  // ✅ Add Group + Metadata
+  data.append(
+    "pinataMetadata",
+    JSON.stringify({
+      name: "evidence-file",
+      keyvalues: {
+        project: "evidence-verification-system",
+        type: "evidence"
+      }
+    })
+  );
+
+  data.append(
+    "pinataOptions",
+    JSON.stringify({
+      cidVersion: 1,
+      groupId: process.env.PINATA_GROUP_ID // ✅ IMPORTANT
+    })
+  );
 
   try {
     const res = await axios.post(
@@ -42,41 +62,37 @@ const uploadToIPFS = async (filePath) => {
 };
 
 
-// Load ABI
 const abi = require("./contract/abi.json");
 
-// Provider (Ganache)
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 
-// Wallet (Ganache account private key)
-console.log("PRIVATE_KEY:", process.env.PRIVATE_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-// Contract instance
 const contract = new ethers.Contract(
   process.env.CONTRACT_ADDRESS,
   abi,
   wallet
 );
 
+console.log("Wallet:", wallet.address);
+console.log("Contract:", process.env.CONTRACT_ADDRESS);
 
-// Generate SHA256 hash (metadata hash)
-const generateHash = (data) => {
+
+const generateMetadataHash = (data) => {
   return crypto.createHash("sha256").update(data).digest("hex");
 };
 
-// file hash
 const generateFileHash = (filePath) => {
   const fileBuffer = fs.readFileSync(filePath);
   return crypto.createHash("sha256").update(fileBuffer).digest("hex");
 };
 
 
-// Health Check
-app.get("/", (req, res) => {
-  res.send("Backend is running");
-});
 
+// Health
+app.get("/", (req, res) => {
+  res.send("Backend is running 🚀");
+});
 
 
 app.post("/create-evidence", upload.single("file"), async (req, res) => {
@@ -90,27 +106,23 @@ app.post("/create-evidence", upload.single("file"), async (req, res) => {
       });
     }
 
-    console.log("Uploading file to IPFS...");
+    console.log("📂 Uploading file to IPFS...");
 
-    // Generate file hash BEFORE deleting file
+    // ✅ Generate file hash
     const fileHash = generateFileHash(file.path);
 
-    // Upload file to IPFS
+    // ✅ Upload to IPFS
     const ipfsHash = await uploadToIPFS(file.path);
 
-    // Delete local file
-    fs.unlinkSync(file.path);
+    // ✅ Delete temp file
+    if (fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
 
-    // Generate metadata hash
-    const metadataHash = crypto
-      .createHash("sha256")
-      .update(metadata)
-      .digest("hex");
+    // ✅ Generate metadata hash
+    const metadataHash = generateMetadataHash(metadata);
 
-    // console.log("IPFS Hash:", ipfsHash);
-    // console.log("Metadata Hash:", metadataHash);
-    // console.log("File Hash:", fileHash);
-    // Call smart contract (UPDATED)
+    // ✅ Store on blockchain
     const tx = await contract.createEvidence(
       ipfsHash,
       metadataHash,
@@ -138,29 +150,51 @@ app.post("/create-evidence", upload.single("file"), async (req, res) => {
 });
 
 
-
-app.get("/count", async (req, res) => {
+app.get("/get-evidence/:id", async (req, res) => {
   try {
-    const count = await contract.count();
+    const id = parseInt(req.params.id);
+
+    if (isNaN(id)) {
+      return res.status(400).json({ error: "Invalid ID" });
+    }
+
+    const data = await contract.getEvidence(id);
 
     res.json({
-      totalEvidence: count.toString()
+      id,
+      ipfsHash: data[0],
+      metadataHash: data[1],
+      fileHash: data[2],
+      owner: data[3],
+      timestamp: data[4].toString()
     });
 
   } catch (error) {
     console.error(error);
     res.status(500).json({
-      error: "Error fetching count"
+      error: "Error fetching evidence",
+      details: error.message
     });
   }
 });
 
+app.get("/count", async (req, res) => {
+  try {
+    const count = Number(await contract.count());
 
+    res.json({
+      totalEvidence: count
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching count" });
+  }
+});
 
 
 app.get("/get-all-evidence", async (req, res) => {
   try {
-    const count = await contract.count();
+    const count = Number(await contract.count());
 
     let evidences = [];
 
@@ -180,63 +214,77 @@ app.get("/get-all-evidence", async (req, res) => {
     res.json(evidences);
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      error: "Error fetching evidences"
-    });
+    res.status(500).json({ error: "Error fetching evidences" });
   }
 });
 
-// verify
-app.post("/verify-evidence/:id", upload.single("file"), async (req, res) => {
+
+app.post("/verify-evidence", upload.single("file"), async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
     const file = req.file;
 
     if (!file) {
       return res.status(400).json({ error: "File is required" });
     }
 
-    console.log("🔍 Verifying Evidence ID:", id);
+    console.log("🔍 Verifying Evidence (hash-based)...");
 
-    // ✅ Step 1: Generate new file hash
+    // ✅ Generate hash of uploaded file
     const newFileHash = generateFileHash(file.path);
 
-    // ✅ Step 2: Delete temp file
-    fs.unlinkSync(file.path);
+    // Delete temp file
+    if (fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
 
-    // ✅ Step 3: Get stored data from blockchain
-    const data = await contract.getEvidence(id);
+    // ✅ Get total evidence count
+    const count = Number(await contract.count());
 
-    const storedFileHash = data[2]; // IMPORTANT: index 2 = fileHash
+    let found = false;
+    let matchedEvidence = null;
 
-    console.log("New File Hash:", newFileHash);
-    console.log("Stored File Hash:", storedFileHash);
+    // ✅ Loop through all evidences
+    for (let i = 0; i < count; i++) {
+      const data = await contract.getEvidence(i);
 
-    // ✅ Step 4: Compare hashes
-    const isValid = newFileHash === storedFileHash;
+      const storedFileHash = data[2];
 
-    // ✅ Step 5: Return result
-    res.json({
-      evidenceId: id,
-      isValid,
-      message: isValid
-        ? "✅ Evidence is authentic (not tampered)"
-        : "❌ Evidence has been tampered",
-      newFileHash,
-      storedFileHash
-    });
+      if (storedFileHash === newFileHash) {
+        found = true;
+        matchedEvidence = {
+          id: i,
+          ipfsHash: data[0],
+          owner: data[3],
+          timestamp: data[4].toString()
+        };
+        break;
+      }
+    }
+
+    // ✅ Result
+    if (found) {
+      res.json({
+        isValid: true,
+        message: "✅ Evidence is authentic",
+        fileHash: newFileHash,
+        evidence: matchedEvidence
+      });
+    } else {
+      res.json({
+        isValid: false,
+        message: "❌ Evidence is tampered",
+        fileHash: newFileHash
+      });
+    }
 
   } catch (error) {
-    console.error("❌ Verification Error:", error);
+    console.error(error);
     res.status(500).json({
       error: "Verification failed",
       details: error.message
     });
   }
 });
-
-
 
 const PORT = 3000;
 
