@@ -58,12 +58,12 @@ export default function AdminDashboard() {
               <table className="table table-hover align-middle mb-0">
                 <thead className="table-light">
                   <tr>
-                    <th style={{ fontSize: 13 }}>#</th>
-                    <th style={{ fontSize: 13 }}>ID</th>
-                    <th style={{ fontSize: 13 }}>Metadata</th>
-                    <th style={{ fontSize: 13 }}>Owner</th>
-                    <th style={{ fontSize: 13 }}>Date</th>
-                    <th style={{ fontSize: 13 }}>IPFS</th>
+                    <th style={{ fontSize: 13, width: 40 }}>#</th>
+                    <th style={{ fontSize: 13, width: 50 }}>ID</th>
+                    <th style={{ fontSize: 13, width: 180 }}>Metadata</th>
+                    <th style={{ fontSize: 13, width: 160 }}>Owner</th>
+                    <th style={{ fontSize: 13, width: 160 }}>Date</th>
+                    <th style={{ fontSize: 13, width: 80 }}>IPFS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -75,7 +75,28 @@ export default function AdminDashboard() {
                       <td style={{ fontSize: 13 }}>
                         <code>{e.id}</code>
                       </td>
-                      <td style={{ fontSize: 13 }}>{e.owner}</td>
+                      <td
+                        style={{
+                          fontSize: 13,
+                          maxWidth: 180,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <span title={e.metadataHash}>{e.metadataHash}</span>
+                      </td>
+                      <td
+                        style={{
+                          fontSize: 13,
+                          maxWidth: 160,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <span title={e.owner}>{e.owner}</span>
+                      </td>
                       <td className="text-muted" style={{ fontSize: 13 }}>
                         {new Date(Number(e.timestamp) * 1000).toLocaleString()}
                       </td>
